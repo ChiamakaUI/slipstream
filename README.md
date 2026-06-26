@@ -3,10 +3,13 @@
 **Ride the leader, land low-latency.**
 
 A smart Solana transaction stack built for the Superteam Nigeria Advanced Infrastructure Challenge:
-**Jito bundle submission** with a **dynamic tip engine** priced from live tip-floor data, full
-**lifecycle tracking** (submitted → processed → confirmed → finalized) over **Yellowstone gRPC**,
-deterministic **failure classification**, and a **Claude-powered autonomous retry agent** that owns
-every retry/abort decision — with its reasoning logged as structured JSON.
+**Jito bundle submission** with a **dynamic tip engine** that prices a baseline from live
+tip-floor data (the floor-finder), full **lifecycle tracking** (submitted → processed → confirmed
+→ finalized) over **Yellowstone gRPC**, deterministic **failure classification**, and a
+**Claude-powered autonomous retry agent** that owns every retry/abort decision — including tip
+*escalation*, the lever that actually wins the auction on the public endpoint — with its reasoning
+logged as structured JSON. The split matters: the engine finds a sane starting price; the agent,
+not the formula, decides how far above it to climb when a bundle won't land.
 
 Everything below comes from running this stack against **mainnet-beta**. Slot numbers in the
 lifecycle log are explorer-verifiable.
@@ -16,9 +19,16 @@ lifecycle log are explorer-verifiable.
 ```bash
 npm install
 cp .env.example .env        # fill in the values below
+npm run smoke               # verify all 3 integrations with ZERO SOL
 npm run dev -- --bundles 2 --inject-faults 0    # dress rehearsal
 npm run run:campaign        # 12 bundles, 2 fault injections
+npm run report              # turn logs/ into report.md (numbers + explorer links)
 ```
+
+`npm run report` reads `logs/lifecycle.jsonl` + `logs/agent-decisions.jsonl` and writes
+`logs/report.md` — landing rate, measured processed→confirmed deltas, explorer-verifiable
+signatures, and the fault→recovery narrative. It refuses to certify a run that used the MOCK
+agent, so every `TODO(campaign)` below is filled from a real, live-agent campaign.
 
 `.env`:
 
@@ -26,21 +36,24 @@ npm run run:campaign        # 12 bundles, 2 fault injections
 |---|---|
 | `GRPC_ENDPOINT` / `GRPC_X_TOKEN` | Yellowstone gRPC (PublicNode personal token works; a dedicated provider is better) |
 | `RPC_URL` | standard JSON-RPC endpoint — a dedicated provider (Helius/QuickNode/Solinfra) is strongly preferred over the public `api.mainnet-beta` endpoint, which is rate-limited and lags |
-| `ANTHROPIC_API_KEY` | powers the retry agent (`AGENT_MODEL`, default claude-sonnet-4-6) |
+| `ANTHROPIC_API_KEY` | powers the retry agent (`AGENT_MODEL`, default claude-haiku-4-5) |
 | `KEYPAIR_PATH` | payer keypair JSON (fund with ≥0.01 SOL) |
 | `BLOCK_ENGINE_URL` / `BLOCK_ENGINE_HTTP` | Jito block engine — **pin one region** (default `amsterdam.mainnet.block-engine.jito.wtf`), not the global anycast endpoint (see Operational lessons) |
 | `JITO_AUTH_KEY` _(optional)_ | x-jito-auth API key for higher rate limits; unset = unauthenticated default sends, which Jito supports |
 | `JITO_AUTH_KEYPAIR_PATH` _(optional)_ | searcher keypair for gRPC challenge-response auth; unset = default sends |
 
-Architecture: the system-flow diagram (`flow.html`) and the decision log (`decisions.html`) are the hosted architecture document. **TODO: public hosting link.**
+**Architecture document:** the hosted dashboard's **Architecture** tab is the full architecture
+document — data-flow diagram, component map, infrastructure decisions, failure-handling strategy,
+and the AI agent's responsibilities. It ships in the same deploy as the live ops console
+(`dashboard/`, `npm run dev` → the *Architecture* nav tab; public URL: **TODO — Vercel link**).
 
 ## Layout
 
 ```
 src/
-  stream/     Yellowstone gRPC slot + transaction streaming, reconnect & backpressure
+  stream/     Yellowstone gRPC slot streaming (slots-only), reconnect & backpressure
   lifecycle/  commitment-stage tracker + deterministic failure classifier
-  tip/        dynamic tip engine: ema50 × congestion × urgency, clamped to [1000, maxTipLamports]
+  tip/        dynamic tip engine: ema50 × congestion, clamped to [1000, maxTipLamports]
   jito/       bundle construction, leader-window targeting, submission, status
   agent/      Claude retry agent: failure context in, decision JSON out
   fault/      fault injector (holds a signed tx until its blockhash expires on-chain)
@@ -61,13 +74,19 @@ measurement of **how fast stake-weighted consensus is forming**:
   (congestion), the cluster is processing forks, or the block's slot is at risk of being
   skipped — the block exists but the network is slow to commit to it.
 
-<!-- TODO(campaign): insert measured per-bundle deltas from lifecycle.jsonl, e.g.
-     "across N landed bundles we measured processed→confirmed of X–Y ms (median Z),
-     consistent with low-congestion conditions (congestion factor ~0.8 from our
-     slot-cadence estimator at submission time)." -->
+<!-- AUTO:q1-deltas -->
+_Run `npm run report` after a campaign to populate measured processed→confirmed deltas._
+<!-- /AUTO:q1-deltas -->
 
-Our tracker timestamps each stage from the Yellowstone stream the moment the slot containing
-the transaction is promoted, so the deltas in `logs/lifecycle.jsonl` are wall-clock honest.
+We timestamp each stage by polling `getSignatureStatuses` from submission (every
+`POLL_INTERVAL_MS`, default **250 ms**) and recording the wall-clock moment the signature first
+reaches each commitment. Two honest caveats follow from how that's measured: the delta is
+**quantized to the poll interval** and includes RPC propagation lag, so read it as a directional
+health signal — a **lower-bound proxy**, not an absolute consensus-latency readout. A large or
+*growing* processed→confirmed delta is the meaningful signal; a near-zero delta usually means the
+chain promoted both stages between two polls, not that consensus was instant. (The Yellowstone
+stream drives slot/leader/congestion timing — it does not timestamp the per-signature stages; see
+Operational lessons for why landing truth is read from the chain, not the stream.)
 
 ### Q2 — Why never fetch a blockhash at `finalized` commitment for a time-sensitive transaction?
 
@@ -105,7 +124,9 @@ slot, the auction result for that slot dies with it. Three consequences we engin
    leader-schedule context to decide between immediate resubmission and waiting for the next
    window.
 
-<!-- TODO(campaign): cite a real skipped/missed-window case from the lifecycle log if one occurs. -->
+<!-- AUTO:q3-skip -->
+_Run `npm run report` after a campaign to cite a real bundle-failure / missed-window case from the log._
+<!-- /AUTO:q3-skip -->
 
 ## Failure handling (not happy-path)
 
@@ -156,10 +177,32 @@ The fixes are architectural, not parametric, and all three ship in the stack:
 3. **Chain-based landing detection is the source of truth.** On the unauthenticated endpoint the
    block-engine's own status lies — `getInflightBundleStatuses` reported `Invalid` for the
    entire life of a bundle that finalized on-chain, and the `bundleResults` stream yields no
-   reasons at all. So landing is confirmed by the Yellowstone chain stream (the LifecycleTracker),
-   never by trusting `sendBundle`'s acceptance.
+   reasons at all. So landing is confirmed on-chain: we poll `getSignatureStatuses` from submit
+   until the signature reaches each commitment level, never by trusting `sendBundle`'s acceptance.
 
-<!-- TODO(campaign): cite the post-cooldown campaign's landing rate and 2-3 explorer links. -->
+   > **On "confirm landing using stream subscriptions, RPC polling insufficient":** we built the
+   > Yellowstone `transactionStatus` subscription first — and it *missed 2 of 2 real landings*,
+   > because providers (SolInfra confirmed) emit that notification at most once, at `processed`,
+   > and drop it under load, so a bundle finalizes while the stream stays silent. A stream you
+   > can't trust to fire is worse than no stream: it reports false `expired_blockhash`. We keep
+   > Yellowstone gRPC as the **stream subscription that drives lifecycle timing** (slot promotion,
+   > leader windows, congestion) and confirm the *specific* signature's landing on-chain, polling
+   > tightly (sub-second) so the processed→confirmed delta (Q1) survives. Stream for timing,
+   > chain for truth — the only combination that didn't lie in testing.
+
+4. **The Yellowstone client version is load-bearing — pin `@triton-one/yellowstone-grpc@4.0.2`.**
+   On Node 24.15 / darwin-arm64 the v5 client's `subscribe()` either hangs indefinitely or throws
+   `failed to open subscribe stream` against an endpoint that `grpcurl` and raw `@grpc/grpc-js`
+   stream from without complaint — so it's the client, not the server. The cause: v4.1.0+ switched
+   the transport to a NAPI/Rust core, and that core is what wedges. v4.0.2 is the last release on
+   the pure `@grpc/grpc-js` transport. The downgrade also changes the API surface: there is no
+   `client.connect()` (grpc-js connects lazily), and channel options use grpc-js names
+   (`grpc.keepalive_time_ms`, `grpc.max_receive_message_length`, …) rather than the NAPI option
+   names. After pinning v4.0.2 the probe streams ~160 slots in 12 s, green every run.
+
+<!-- AUTO:landing-summary -->
+_Run `npm run report` after a campaign to populate the landing rate and explorer links._
+<!-- /AUTO:landing-summary -->
 
 ## Verifying the lifecycle log
 
@@ -168,4 +211,13 @@ signature, blockhash fetch slot, tip basis (formula inputs included), target lea
 stage timestamps, failure classification, and the IDs of the agent decisions that drove each
 retry. Landed entries' slots and signatures can be checked on any explorer.
 
-<!-- TODO(campaign): add 2-3 example explorer links once the judged campaign log exists. -->
+**Leader targeting is verified, not just claimed.** After a bundle lands we call
+`getSlotLeaders` on the landed slot and compare the actual block producer to the
+`targetLeaderIdentity` we captured at submit time (`landedSlotLeader` / `targetLeaderMatched`
+on each attempt). `npm run report` summarises how many landed bundles hit the exact targeted
+Jito leader's slot — and you can confirm it independently: open the slot on any explorer and
+check its producer against `targetLeaderIdentity` in the log.
+
+<!-- AUTO:explorer-links -->
+_Run `npm run report` after a campaign to populate explorer links._
+<!-- /AUTO:explorer-links -->

@@ -1,10 +1,4 @@
-/**
- * Shared domain types for the smart transaction stack.
- *
- * The lifecycle model mirrors the bounty's required stages exactly:
- * Submitted → Processed → Confirmed → Finalized, with slot numbers,
- * timestamps, and latency deltas captured at every transition.
- */
+/** Shared domain types for the smart transaction stack. */
 
 export type CommitmentStage = "submitted" | "processed" | "confirmed" | "finalized";
 
@@ -29,7 +23,7 @@ export interface TipDecision {
   lamports: number;
   /** Tip account the lamports were sent to. */
   tipAccount: string;
-  /** Inputs that produced this tip — proves nothing is hardcoded. */
+  /** The inputs that produced this tip — nothing is hardcoded. */
   basis: {
     landedTips25th: number;
     landedTips50th: number;
@@ -52,6 +46,14 @@ export interface BundleAttempt {
   tip: TipDecision;
   /** Leader window targeted for this submission. */
   targetLeaderSlot?: number;
+  /** Identity (base58) of the Jito leader whose window we targeted. */
+  targetLeaderIdentity?: string;
+  /** Slot the bundle landed in (post-landing leader verification). */
+  landedSlot?: number;
+  /** Identity (base58) that actually produced `landedSlot`. */
+  landedSlotLeader?: string;
+  /** True iff `landedSlotLeader === targetLeaderIdentity`. */
+  targetLeaderMatched?: boolean;
   stages: StageRecord[];
   failure?: {
     class: FailureClass;
@@ -70,15 +72,12 @@ export interface LifecycleEntry {
   network: "mainnet-beta" | "testnet";
   attempts: BundleAttempt[];
   /** Final outcome after retries. */
-  outcome: "finalized" | "confirmed" | "failed" | "aborted";
+  outcome: "finalized" | "confirmed" | "processed" | "failed" | "aborted";
   /** Agent decisions that shaped this entry (by decision id). */
   agentDecisionIds: string[];
 }
 
-/**
- * A single decision made by the AI agent. Every field is persisted —
- * "reasoning is visible" is a judged criterion, so this is the artifact.
- */
+/** A single decision made by the AI agent. */
 export interface AgentDecision {
   id: string;
   at: number;
@@ -115,11 +114,4 @@ export interface SlotUpdate {
   /** processed | confirmed | finalized as reported by the stream. */
   status: string;
   receivedAt: number;
-}
-
-export interface LeaderWindow {
-  leader: string;
-  startSlot: number;
-  endSlot: number;
-  jitoEnabled?: boolean;
 }

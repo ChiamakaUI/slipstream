@@ -2,90 +2,118 @@ import { Connection, Keypair } from "@solana/web3.js";
 import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { parseArgs } from "node:util";
+import { pathToFileURL } from "node:url";
 import { config } from "./config.js";
 import { GeyserStream } from "./stream/geyser.js";
-import { LeaderTracker } from "./stream/leaders.js";
 import { TipEngine } from "./tip/engine.js";
 import { JitoClient } from "./jito/client.js";
-import { LifecycleTracker } from "./lifecycle/tracker.js";
 import { classifyFailure, type FailureEvidence } from "./lifecycle/classifier.js";
 import { RetryAgent, type AgentContext } from "./agent/agent.js";
 import { FaultInjector } from "./fault/injector.js";
 import { LogStore } from "./log/store.js";
-import type { BundleAttempt, LifecycleEntry } from "./types.js";
+import { DashboardServer, type DashEventType } from "./dashboard/server.js";
+import type { AgentDecision, BundleAttempt, LifecycleEntry } from "./types.js";
 
-/**
- * Campaign orchestrator.
- *
- * Control flow rule that matters for judging: this file contains NO retry
- * policy. When an attempt fails it is classified and handed to the agent;
- * the agent's decision (retry-with-changes or abort) is executed verbatim.
- */
-
-const { values: cli } = parseArgs({
-  options: {
-    bundles: { type: "string", default: "12" },
-    "inject-faults": { type: "string", default: "2" },
-  },
-});
+/** Campaign orchestrator. */
 
 const log = new LogStore();
 const say = (msg: string) => {
   console.log(`[${new Date().toISOString()}] ${msg}`);
 };
 
-async function waitForLeaderWindow(jito: JitoClient, stream: GeyserStream): Promise<number> {
+/** Live dashboard sink. No-ops until a server is attached via useDashboard(). */
+let dash: DashboardServer | undefined;
+const pub = (t: DashEventType, d: unknown) => dash?.publish(t, d);
+
+/** Route campaign events to a dashboard server. */
+export function useDashboard(d: DashboardServer): void {
+  dash = d;
+}
+
+async function waitForLeaderWindow(
+  jito: JitoClient,
+  stream: GeyserStream
+): Promise<{ slot: number; identity: string }> {
   for (;;) {
-    const info = await jito.nextScheduledLeader();
+    let info: Awaited<ReturnType<JitoClient["nextScheduledLeader"]>>;
+    try {
+      info = await jito.nextScheduledLeader();
+    } catch (err) {
+      // transient block-engine errors: leader lookup is a pure read, just retry
+      say(`  leader lookup failed (${String(err).slice(0, 80)}) — retrying in 1.5s`);
+      await new Promise((r) => setTimeout(r, 1500));
+      continue;
+    }
     const gap = info.nextLeaderSlot - info.currentSlot;
+    pub("leader", {
+      currentSlot: info.currentSlot,
+      nextLeaderSlot: info.nextLeaderSlot,
+      identity: info.nextLeaderIdentity,
+      gap,
+    });
     if (gap <= 8) {
       say(`leader window: slot ${info.nextLeaderSlot} (${gap} slots away, leader ${info.nextLeaderIdentity.slice(0, 8)}…)`);
-      return info.nextLeaderSlot;
+      return { slot: info.nextLeaderSlot, identity: info.nextLeaderIdentity };
     }
     say(`holding: next Jito leader in ${gap} slots (~${Math.round(gap * 0.4)}s)`);
     await new Promise((r) => setTimeout(r, Math.min(gap * 400, 4000)));
   }
 }
 
-function waitForStage(
-  tracker: LifecycleTracker,
+type StageName = "processed" | "confirmed" | "finalized";
+interface Landing {
+  landed: boolean;
+  outcome?: StageName;
+  txErr?: unknown;
+  slot?: number;
+}
+
+const STAGE_LADDER: readonly StageName[] = ["processed", "confirmed", "finalized"];
+
+/** Poll getSignatureStatuses from submit, recording when each commitment level first lands. */
+async function pollLanding(
+  connection: Connection,
   signature: string,
-  stage: string,
-  timeoutMs: number
-): Promise<{ reached: boolean; deadSlot?: boolean; txErr?: unknown }> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      resolve({ reached: false });
-    }, timeoutMs);
-    const onStage = (e: any) => {
-      if (e.signature === signature && e.stage === stage) {
-        cleanup();
-        resolve({ reached: true });
+  onStage: (stage: StageName, slot: number, at: number) => void,
+  opts: { processedTimeoutMs: number; confirmTimeoutMs: number; finalizeTimeoutMs: number; intervalMs: number }
+): Promise<Landing> {
+  let best = 0; // 0=none, 1=processed, 2=confirmed, 3=finalized
+  let slot = 0;
+  const processedDeadline = Date.now() + opts.processedTimeoutMs;
+  let phaseDeadline = processedDeadline;
+
+  for (;;) {
+    let st: { slot: number; err: unknown; confirmationStatus?: string } | null = null;
+    try {
+      const { value } = await connection.getSignatureStatuses([signature], {
+        searchTransactionHistory: true,
+      });
+      st = value[0] as any;
+    } catch {
+      /* transient RPC error — retry until the deadline */
+    }
+
+    if (st) {
+      if (st.err) return { landed: false, txErr: st.err, slot: st.slot };
+      slot = st.slot ?? slot;
+      const lvl = STAGE_LADDER.indexOf((st.confirmationStatus as StageName) ?? "processed") + 1;
+      // emit every newly-reached level
+      for (let l = best + 1; l <= lvl; l++) onStage(STAGE_LADDER[l - 1], slot, Date.now());
+      if (lvl > best) {
+        best = lvl;
+        if (best === 1) phaseDeadline = Date.now() + opts.confirmTimeoutMs;
+        if (best === 2) phaseDeadline = Date.now() + opts.finalizeTimeoutMs;
       }
-    };
-    const onDead = (e: any) => {
-      if (e.signature === signature) {
-        cleanup();
-        resolve({ reached: false, deadSlot: true });
-      }
-    };
-    const onErr = (e: any) => {
-      if (e.signature === signature) {
-        cleanup();
-        resolve({ reached: false, txErr: e.err });
-      }
-    };
-    const cleanup = () => {
-      clearTimeout(timer);
-      tracker.off("stage", onStage);
-      tracker.off("tx-dead-slot", onDead);
-      tracker.off("tx-error", onErr);
-    };
-    tracker.on("stage", onStage);
-    tracker.on("tx-dead-slot", onDead);
-    tracker.on("tx-error", onErr);
-  });
+      if (best === 3) return { landed: true, outcome: "finalized", slot };
+    }
+
+    const deadline = best === 0 ? processedDeadline : phaseDeadline;
+    if (Date.now() >= deadline) {
+      if (best === 0) return { landed: false }; // never processed → not landed
+      return { landed: true, outcome: STAGE_LADDER[best - 1], slot };
+    }
+    await new Promise((r) => setTimeout(r, opts.intervalMs));
+  }
 }
 
 async function runOne(opts: {
@@ -95,14 +123,13 @@ async function runOne(opts: {
     connection: Connection;
     payer: Keypair;
     stream: GeyserStream;
-    tracker: LifecycleTracker;
     jito: JitoClient;
     tips: TipEngine;
     agent: RetryAgent;
     injector: FaultInjector;
   };
 }): Promise<LifecycleEntry> {
-  const { connection, payer, stream, tracker, jito, tips, agent, injector } = opts.deps;
+  const { connection, payer, stream, jito, tips, agent, injector } = opts.deps;
 
   const entry: LifecycleEntry = {
     id: randomUUID(),
@@ -118,7 +145,8 @@ async function runOne(opts: {
   let injectThisAttempt = opts.injectFault;
 
   while (attempt <= config.maxAttempts) {
-    const targetLeaderSlot = await waitForLeaderWindow(jito, stream);
+    const targetLeader = await waitForLeaderWindow(jito, stream);
+    const targetLeaderSlot = targetLeader.slot;
 
     const bh = await connection.getLatestBlockhash("confirmed");
     const blockhashFetchedAtSlot = stream.currentSlot;
@@ -126,7 +154,7 @@ async function runOne(opts: {
     const tipAccount = await jito.randomTipAccount();
     const tip = forcedTip
       ? { ...(await tips.decide(tipAccount)), lamports: forcedTip }
-      : await tips.decide(tipAccount, injectThisAttempt ? 1 : 1);
+      : await tips.decide(tipAccount);
 
     const { bundle, signature } = jito.buildBundle({
       payer,
@@ -151,14 +179,14 @@ async function runOne(opts: {
       blockhashFetchedAtSlot,
       tip,
       targetLeaderSlot,
+      targetLeaderIdentity: targetLeader.identity,
       stages: [],
       faultInjected: injectThisAttempt || undefined,
     };
     entry.attempts.push(rec);
 
     const submittedAt = Date.now();
-    tracker.track(signature, submittedAt);
-    rec.stages = tracker.stagesOf(signature);
+    rec.stages = [{ stage: "submitted", observedAt: submittedAt }];
 
     let bundleId: string | undefined;
     let sendErr: unknown;
@@ -171,27 +199,81 @@ async function runOne(opts: {
       say(`bundle ${opts.index} attempt ${attempt}: sendBundle rejected: ${String(err)}`);
     }
 
-    let processed: { reached: boolean; deadSlot?: boolean; txErr?: unknown } = { reached: false };
+    pub("attempt", {
+      entryId: entry.id,
+      index: opts.index,
+      attempt,
+      signature,
+      bundleId,
+      tipLamports: tip.lamports,
+      tipAccount,
+      basisFormula: tip.basis.formula,
+      percentiles: { p50: tip.basis.landedTips50th, p99: tip.basis.landedTips99th },
+      targetLeaderSlot,
+      targetLeaderIdentity: targetLeader.identity,
+      blockhashFetchedAtSlot,
+      faultInjected: injectThisAttempt || false,
+      sendError: sendErr ? String(sendErr) : undefined,
+      submittedAt,
+    });
+
+    // poll for landing; record each stage and stream it live
+    let landing: Landing = { landed: false };
     if (!sendErr) {
-      processed = await waitForStage(tracker, signature, "processed", config.processedTimeoutMs);
+      landing = await pollLanding(
+        connection,
+        signature,
+        (stage, slot, at) => {
+          const prev = rec.stages[rec.stages.length - 1];
+          rec.stages.push({ stage, observedAt: at, slot, deltaFromPrevMs: prev ? at - prev.observedAt : undefined });
+          pub("stage", { signature, stage, slot, at });
+          say(`  lifecycle: ${signature.slice(0, 12)}… → ${stage} @ slot ${slot}`);
+        },
+        { processedTimeoutMs: config.processedTimeoutMs, confirmTimeoutMs: 15_000, finalizeTimeoutMs: 20_000, intervalMs: config.pollIntervalMs }
+      );
     }
 
-    if (processed.reached) {
-      const confirmed = await waitForStage(tracker, signature, "confirmed", 60_000);
-      const finalized = confirmed.reached
-        ? await waitForStage(tracker, signature, "finalized", 90_000)
-        : { reached: false };
-      tracker.release(signature);
-      entry.outcome = finalized.reached ? "finalized" : confirmed.reached ? "confirmed" : "confirmed";
+    if (landing.landed) {
+      entry.outcome = landing.outcome!;
+      say(`bundle ${opts.index} attempt ${attempt}: LANDED (${landing.outcome} @ slot ${landing.slot})`);
+
+      // post-landing leader verification: prove the bundle landed in the targeted window
+      if (landing.slot) {
+        try {
+          const [leader] = await connection.getSlotLeaders(landing.slot, 1);
+          const landedLeader = leader?.toBase58();
+          rec.landedSlot = landing.slot;
+          rec.landedSlotLeader = landedLeader;
+          rec.targetLeaderMatched =
+            !!landedLeader && landedLeader === targetLeader.identity;
+          say(
+            `  leader check: slot ${landing.slot} produced by ${landedLeader?.slice(0, 8)}… ` +
+              `(targeted ${targetLeader.identity.slice(0, 8)}… → ${rec.targetLeaderMatched ? "MATCH" : "different leader"})`
+          );
+          pub("leadercheck", {
+            entryId: entry.id,
+            index: opts.index,
+            signature,
+            landedSlot: landing.slot,
+            landedSlotLeader: landedLeader,
+            targetLeaderSlot,
+            targetLeaderIdentity: targetLeader.identity,
+            matched: rec.targetLeaderMatched,
+          });
+        } catch (err) {
+          // Leader lookup is best-effort evidence, never a landing blocker.
+          say(`  leader check unavailable: ${String(err).slice(0, 80)}`);
+        }
+      }
+
       log.lifecycle(entry);
       return entry;
     }
 
     // ---- failure path: gather evidence, classify, ask the agent ----
-    tracker.release(signature);
     const evidence: FailureEvidence = {
-      txErr: processed.txErr ?? (sendErr ? { sendError: String(sendErr) } : undefined),
-      timedOut: !processed.reached && !processed.txErr && !sendErr,
+      txErr: landing.txErr ?? (sendErr ? { sendError: String(sendErr) } : undefined),
+      timedOut: !landing.landed && !landing.txErr && !sendErr,
     };
     try {
       evidence.blockhashStillValid = (
@@ -207,8 +289,18 @@ async function runOne(opts: {
     const { cls, detail } = classifyFailure(evidence);
     rec.failure = { class: cls, detail, detectedAt: Date.now(), detectedAtSlot: stream.currentSlot };
     say(`bundle ${opts.index} attempt ${attempt}: FAILED — ${cls} (${detail})`);
+    pub("failure", {
+      entryId: entry.id,
+      index: opts.index,
+      attempt,
+      signature,
+      class: cls,
+      detail,
+      detectedAtSlot: stream.currentSlot,
+    });
 
     const snapshot = await tips.refresh();
+    pub("tipfloor", { ...snapshot, congestion: tips.congestionFactor() });
     const ctx: AgentContext = {
       entryId: entry.id,
       attempt,
@@ -229,9 +321,20 @@ async function runOne(opts: {
       })),
     };
 
-    const decision = await agent.decide(ctx);
+    let decision: AgentDecision;
+    try {
+      decision = await agent.decide(ctx);
+    } catch (err) {
+      // agent API unavailable: record the failure and abort this entry cleanly
+      say(`agent error: ${String(err)} — aborting this bundle (no autonomous decision possible)`);
+      log.event("agent-error", { entryId: entry.id, attempt, err: String(err) });
+      entry.outcome = "aborted";
+      log.lifecycle(entry);
+      return entry;
+    }
     log.agentDecision(decision);
     entry.agentDecisionIds.push(decision.id);
+    pub("decision", { index: opts.index, ...decision });
     say(`agent [${agent.mode}]: ${decision.decision.action} (confidence ${decision.decision.confidence})`);
     say(`agent reasoning: ${decision.reasoning.slice(0, 300)}${decision.reasoning.length > 300 ? "…" : ""}`);
 
@@ -261,19 +364,26 @@ async function runOne(opts: {
   return entry;
 }
 
-async function main() {
-  const totalBundles = parseInt(cli.bundles!, 10);
-  const faultCount = parseInt(cli["inject-faults"]!, 10);
+/** Run one campaign end-to-end against a funded payer, publishing each step to the dashboard. */
+export async function runCampaign(opts: {
+  totalBundles: number;
+  faultCount: number;
+  payer: Keypair;
+  connection: Connection;
+}): Promise<{ landed: number; total: number }> {
+  const { totalBundles, faultCount, payer, connection } = opts;
 
-  const payer = Keypair.fromSecretKey(
-    Uint8Array.from(JSON.parse(readFileSync(config.keypairPath, "utf8")))
-  );
-  say(`payer: ${payer.publicKey.toBase58()}`);
-
-  const connection = new Connection(config.rpcUrl, "confirmed");
-  const balance = await connection.getBalance(payer.publicKey);
-  say(`balance: ${balance / 1e9} SOL`);
-  if (balance < 0.01 * 1e9) throw new Error("fund the payer with at least 0.01 SOL");
+  pub("campaign", {
+    totalBundles,
+    faultCount,
+    network: config.network,
+    payer: payer.publicKey.toBase58(),
+    maxTipLamports: config.maxTipLamports,
+    maxAttempts: config.maxAttempts,
+    blockEngine: config.blockEngineUrl,
+    agentModel: config.agentModel,
+    startedAt: Date.now(),
+  });
 
   const stream = new GeyserStream();
   stream.on("connected", (e) => say(`geyser connected: ${JSON.stringify(e)}`));
@@ -281,25 +391,32 @@ async function main() {
   stream.on("overflow", (e) => say(`geyser queue overflow: ${e.dropped} dropped`));
 
   const tips = new TipEngine();
-  stream.on("slot", (u) => tips.observeSlot(u.receivedAt));
-
-  const tracker = new LifecycleTracker(stream);
-  tracker.on("stage", (e) =>
-    say(`  lifecycle: ${e.signature.slice(0, 12)}… → ${e.stage} @ slot ${e.slot ?? "?"}`)
-  );
+  stream.on("slot", (u) => {
+    tips.observeSlot(u.receivedAt);
+    pub("slot", { slot: u.slot, status: u.status, receivedAt: u.receivedAt });
+  });
 
   const jito = new JitoClient();
   const agent = new RetryAgent();
   const injector = new FaultInjector(connection);
-  const leaders = new LeaderTracker(connection);
 
   say(`agent mode: ${agent.mode}${agent.mode === "mock" ? " (set ANTHROPIC_API_KEY before the real campaign)" : ""}`);
 
   await stream.start();
   // Let the slot stream warm up so congestion estimates mean something.
   await new Promise((r) => setTimeout(r, 5000));
-  await tips.refresh();
-  await leaders.refresh(stream.currentSlot);
+
+  // fail fast on a dead Yellowstone endpoint
+  if (stream.currentSlot === 0) {
+    throw new Error(
+      "Yellowstone gRPC produced no slot updates in 5s — check GRPC_ENDPOINT/GRPC_X_TOKEN. " +
+        "The default public endpoint often rejects token-less subscriptions; use a dedicated " +
+        "provider (SolInfra / Helius / a PublicNode personal token)."
+    );
+  }
+  say(`stream live at slot ${stream.currentSlot}`);
+  const firstFloor = await tips.refresh();
+  pub("tipfloor", { ...firstFloor, congestion: tips.congestionFactor() });
 
   const results: LifecycleEntry[] = [];
   for (let i = 1; i <= totalBundles; i++) {
@@ -310,9 +427,18 @@ async function main() {
       const entry = await runOne({
         index: i,
         injectFault,
-        deps: { connection, payer, stream, tracker, jito, tips, agent, injector },
+        deps: { connection, payer, stream, jito, tips, agent, injector },
       });
       results.push(entry);
+      const lastLanded = [...entry.attempts].reverse().find((a) => !a.failure);
+      pub("outcome", {
+        entryId: entry.id,
+        index: i,
+        outcome: entry.outcome,
+        attempts: entry.attempts.length,
+        finalSignature: lastLanded?.signature,
+        finalTipLamports: lastLanded?.tip.lamports,
+      });
       say(`bundle ${i}: outcome=${entry.outcome} attempts=${entry.attempts.length}`);
     } catch (err) {
       say(`bundle ${i}: orchestrator error: ${String(err)}`);
@@ -323,12 +449,50 @@ async function main() {
   }
 
   const landed = results.filter((r) => r.outcome === "finalized" || r.outcome === "confirmed").length;
+  pub("done", { landed, total: results.length, finishedAt: Date.now() });
   say(`\ncampaign done: ${landed}/${results.length} landed, logs in ${config.logDir}/`);
-  await stream.stop();
-  process.exit(0);
+  await stream.stop(); // stop the metered gRPC stream; the dashboard keeps its buffer
+  return { landed, total: results.length };
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+/** Terminal entrypoint: one campaign, then keep the dashboard alive for viewing. */
+async function cliMain() {
+  const { values: cli } = parseArgs({
+    options: {
+      bundles: { type: "string", default: "12" },
+      "inject-faults": { type: "string", default: "2" },
+    },
+  });
+  const totalBundles = parseInt(cli.bundles!, 10);
+  const faultCount = parseInt(cli["inject-faults"]!, 10);
+
+  const payer = Keypair.fromSecretKey(
+    Uint8Array.from(JSON.parse(readFileSync(config.keypairPath, "utf8")))
+  );
+  say(`payer: ${payer.publicKey.toBase58()}`);
+
+  const server = new DashboardServer();
+  await server.start();
+  useDashboard(server);
+  say(`dashboard: ${server.url}  ← open this to watch the campaign live`);
+
+  const connection = new Connection(config.rpcUrl, "confirmed");
+  const balance = await connection.getBalance(payer.publicKey);
+  say(`balance: ${balance / 1e9} SOL`);
+  if (balance < config.minStartBalanceSol * 1e9) {
+    throw new Error(`fund the payer with at least ${config.minStartBalanceSol} SOL`);
+  }
+
+  await runCampaign({ totalBundles, faultCount, payer, connection });
+
+  // don't exit: keep the HTTP server alive so the finished campaign stays viewable
+  say(`dashboard still live at ${server.url} — Ctrl-C to exit (logs are saved either way)`);
+}
+
+// run directly only when this file is the entrypoint
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  cliMain().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

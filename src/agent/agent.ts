@@ -2,18 +2,7 @@ import { randomUUID } from "node:crypto";
 import { config } from "../config.js";
 import type { AgentDecision, FailureClass } from "../types.js";
 
-/**
- * The AI agent owns the retry decision. The orchestrator NEVER retries on
- * its own — when an attempt fails, the full failure context is handed
- * here, and whatever comes back (retry with specific changes, or abort)
- * is executed verbatim. Reasoning is persisted word-for-word.
- *
- * The agent decides via a Claude tool call with a strict schema, so the
- * decision is structured while the reasoning stays free-form. If no
- * ANTHROPIC_API_KEY is set the agent runs in MOCK mode (clearly labeled
- * in every record) so the stack stays runnable end-to-end in development.
- * Mock decisions must never appear in the submitted lifecycle log.
- */
+/** Owns the retry decision: given a failed attempt, returns retry-with-changes or abort. */
 
 export interface AgentContext {
   entryId: string;
@@ -78,8 +67,8 @@ Domain facts you must reason with:
 - A blockhash is valid for ~150 slots (~60s). If slotsSinceBlockhashFetch approaches or exceeds 150, any resubmission MUST refresh the blockhash or it is guaranteed to fail again.
 - Jito bundles land only when the current leader runs the Jito client; a bundle that stays Pending may simply be waiting for a Jito leader window, or its tip may be below the current inclusion floor.
 - The published tip percentiles (p25..p99) are the tips of recently LANDED bundles — but most of those land from staked/authenticated connections. On an unauthenticated public connection your bundles are deprioritized, so the tip you actually need to land can be MANY TIMES the published p99. Treat the percentiles as a lower bound, not a target.
-- KEY INFERENCE: if prior attempts in attemptHistory already tipped at or ABOVE p99 and still did not land (failureClass bundle_failure, never reaching processed), the tip was not the only obstacle OR the real inclusion floor for this connection is far higher. In that case escalate the tip MULTIPLICATIVELY (e.g. 3–6×), not by small percentages — small bumps just burn attempts. Failed bundles cost nothing, so an aggressive escalation that finally lands is cheaper than many timid ones that don't.
-- Budget guardrail: NEVER propose newTipLamports above maxTipLamports. As you approach it, and if even near-cap tips won't land, prefer to abort rather than waste the final attempts — a connection that won't land at the cap needs authenticated infrastructure, not more retries.
+- KEY INFERENCE: if prior attempts in attemptHistory already tipped at or ABOVE p99 and still did not land (failureClass bundle_failure, never reaching processed), the tip was not the only obstacle OR the real inclusion floor for this connection is far higher. In that case escalate the tip MULTIPLICATIVELY (e.g. 3–6×), not by small percentages — small bumps just burn attempts. Failed bundles cost nothing, so an aggressive escalation that finally lands is cheaper than many timid ones that don't. Do NOT crawl up from tiny tips: when cheap attempts are dropped-before-auction, the inclusion floor is high — within one or two attempts jump to a LARGE fraction of maxTipLamports (70–100%), because every dropped attempt is free and the goal is to cross the floor, not to bracket it slowly.
+- Budget guardrail: NEVER propose newTipLamports above maxTipLamports. But do NOT abort while attempts remain AND your last tip was still BELOW maxTipLamports — for a bundle_failure that never reached the auction (Invalid / dropped before auction) the only proven cure is more tip, and trying the cap costs nothing when it fails. In that situation set newTipLamports to 90–100% of maxTipLamports and retry. Abort ONLY when you have ALREADY tried at (or within ~10% of) maxTipLamports and it STILL failed to land — that is the real signal the connection needs authenticated infrastructure, not more retries.
 - Retrying without changing anything causally connected to the failure is wasted money. Every retry must change something — tip, blockhash, or timing — tied to the evidence, or you should abort.
 
 Always weigh cost vs landing probability vs time sensitivity, and say what you rejected and why.`;
@@ -160,7 +149,7 @@ export class RetryAgent {
   }
 }
 
-/** Deterministic stand-in for development only. Clearly labeled in records. */
+/** Deterministic stand-in for development only. */
 function mockDecision(ctx: AgentContext): Pick<AgentDecision, "reasoning" | "decision"> {
   if (ctx.attempt >= ctx.maxAttempts) {
     return {
