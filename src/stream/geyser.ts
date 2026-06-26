@@ -1,10 +1,22 @@
-import GrpcDefault, { CommitmentLevel } from "@triton-one/yellowstone-grpc";
 import { EventEmitter } from "node:events";
+import { createRequire } from "node:module";
 import { config } from "../config.js";
 import type { SlotUpdate } from "../types.js";
+import type GrpcDefault from "@triton-one/yellowstone-grpc";
 
-// CJS/ESM interop: class arrives on `.default` under tsx/Node ESM.
-const Client = ((GrpcDefault as any).default ?? GrpcDefault) as typeof GrpcDefault;
+// yellowstone-grpc is a CommonJS package. Under tsx/Node ESM, named imports
+// like `CommitmentLevel` are resolved by Node's cjs-module-lexer, which fails
+// to detect the enum on some Node versions — crashing at module load on
+// Railway (Node 20.x). createRequire returns the real module.exports, which
+// always carries both the Client class (as `default`) and the enum.
+const require = createRequire(import.meta.url);
+const Grpc = require("@triton-one/yellowstone-grpc");
+const Client = (Grpc.default ?? Grpc) as typeof GrpcDefault;
+const CommitmentLevel = Grpc.CommitmentLevel as {
+  PROCESSED: number;
+  CONFIRMED: number;
+  FINALIZED: number;
+};
 type GrpcClient = InstanceType<typeof GrpcDefault>;
 
 /** Yellowstone gRPC slot stream with reconnect, keepalive ping, and backpressure. */
