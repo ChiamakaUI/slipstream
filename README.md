@@ -1,18 +1,51 @@
 # Slipstream
 
-**Ride the leader, land low-latency.**
+### Ride the leader. Land low-latency.
 
-A smart Solana transaction stack built for the Superteam Nigeria Advanced Infrastructure Challenge:
-**Jito bundle submission** with a **dynamic tip engine** that prices a baseline from live
-tip-floor data (the floor-finder), full **lifecycle tracking** (submitted → processed → confirmed
-→ finalized) over **Yellowstone gRPC**, deterministic **failure classification**, and a
-**Claude-powered autonomous retry agent** that owns every retry/abort decision — including tip
-*escalation*, the lever that actually wins the auction on the public endpoint — with its reasoning
-logged as structured JSON. The split matters: the engine finds a sane starting price; the agent,
-not the formula, decides how far above it to climb when a bundle won't land.
+> **▶ Watch the 3-minute demo:** **https://youtu.be/REPLACE_WITH_VIDEO_ID**
+> **🖥 Live ops console:** https://melodic-caramel-c6e7e5.netlify.app · **📐 Architecture doc:** same URL → *Architecture* tab
+> **Network:** mainnet-beta · **Agent:** Claude Haiku 4.5 · built for the **Superteam Nigeria Advanced Infrastructure Challenge**
 
-Everything below comes from running this stack against **mainnet-beta**. Slot numbers in the
-lifecycle log are explorer-verifiable.
+---
+
+Anyone can *send* a Solana transaction. **Landing** one — reliably, under congestion, on a public
+endpoint — is a different problem entirely. Slipstream is a smart transaction stack built around
+the exact part most stacks hard-code: **the retry**.
+
+A dynamic **tip engine** prices a sane opening bid from live Jito tip-floor data. Then an
+autonomous **Claude agent — not a formula —** decides how far above that bid to climb when a bundle
+won't land. The orchestrator (`main.ts`) contains **no retry policy at all**; it executes whatever
+the agent decides. The whole journey is tracked through every commitment stage
+(submitted → processed → confirmed → finalized) over **Yellowstone gRPC**, and every failure is
+classified deterministically before the agent ever sees it.
+
+> ### The bug that wasn't a bug
+> On Jito's unauthenticated endpoint, exceeding **one request per second per IP** doesn't throw an
+> error — it **shadow-drops your bundles**. `sendBundle` keeps returning valid bundle IDs while
+> *nothing lands*. We chased "tip too low" for hours, climbing a tip ladder to 2.5M lamports that
+> landed nothing — until the chain itself proved us wrong. The fix is architectural, and it ships
+> in the stack. → [Operational lessons](#operational-lessons-learned-the-hard-way)
+
+**Don't trust this README — check the chain.** Every landed slot and signature below is
+explorer-verifiable, including one finalized **top-of-block** (`5bQBJ7oj…`, slot `426110964`,
+tx index 16). Slot numbers in the lifecycle log are real.
+
+---
+
+## See it live (60-second tour)
+
+1. **Open the [live console](https://melodic-caramel-c6e7e5.netlify.app).** It boots into **replay**
+   of a recorded mainnet campaign — no setup, no spend. Watch a bundle move through the
+   **Execution Pipeline** and the **Landing Probability** read its odds in real time.
+2. **Click bundle `B2`** in *Live Orchestrations* to open its **Retry Ladder**. This is the whole
+   thesis in one panel: tip `0.0000` → **dropped**, `0.0003` → **dropped**, `0.0036` →
+   **CONFIRMED**. The agent escalated the tip until it crossed the inclusion floor.
+3. **Read the *Decisions* tab.** Every retry carries the agent's full reasoning, its confidence,
+   and the alternatives it rejected — structured JSON, not a black box.
+4. **Open the *Architecture* tab** for the full design document: data-flow diagram, component map,
+   infrastructure decisions, and the agent's OWNS / NEVER responsibilities.
+
+---
 
 ## Quick start
 
@@ -27,8 +60,8 @@ npm run report              # turn logs/ into report.md (numbers + explorer link
 
 `npm run report` reads `logs/lifecycle.jsonl` + `logs/agent-decisions.jsonl` and writes
 `logs/report.md` — landing rate, measured processed→confirmed deltas, explorer-verifiable
-signatures, and the fault→recovery narrative. It refuses to certify a run that used the MOCK
-agent, so every `TODO(campaign)` below is filled from a real, live-agent campaign.
+signatures, and the fault→recovery narrative. It **refuses to certify a run that used the MOCK
+agent**, so every figure it emits comes from a real, live-agent campaign.
 
 `.env`:
 
@@ -42,24 +75,31 @@ agent, so every `TODO(campaign)` below is filled from a real, live-agent campaig
 | `JITO_AUTH_KEY` _(optional)_ | x-jito-auth API key for higher rate limits; unset = unauthenticated default sends, which Jito supports |
 | `JITO_AUTH_KEYPAIR_PATH` _(optional)_ | searcher keypair for gRPC challenge-response auth; unset = default sends |
 
-**Architecture document:** the hosted dashboard's **Architecture** tab is the full architecture
-document — data-flow diagram, component map, infrastructure decisions, failure-handling strategy,
-and the AI agent's responsibilities. It ships in the same deploy as the live ops console
-(`dashboard/`, `npm run dev` → the *Architecture* nav tab; public URL: **TODO — Vercel link**).
+---
 
-## Layout
+## How it works
+
+The data flows in one direction; each module owns exactly one job.
 
 ```
 src/
   stream/     Yellowstone gRPC slot streaming (slots-only), reconnect & backpressure
-  lifecycle/  commitment-stage tracker + deterministic failure classifier
-  tip/        dynamic tip engine: ema50 × congestion, clamped to [1000, maxTipLamports]
+  tip/        dynamic tip engine: clamp(ema50 × congestion, 1000, maxTipLamports)
   jito/       bundle construction, leader-window targeting, submission, status
+  lifecycle/  commitment-stage tracker + deterministic failure classifier
   agent/      Claude retry agent: failure context in, decision JSON out
   fault/      fault injector (holds a signed tx until its blockhash expires on-chain)
   log/        lifecycle.jsonl + agent-decisions.jsonl writers
   main.ts     campaign orchestrator — contains NO retry policy; the agent owns it
 ```
+
+The split that defines the system: **the engine finds a sane price; the agent decides how far above
+it to climb.** A formula can interpolate a tip percentile. It cannot reason that *cheap bundles
+dropped before the auction mean the inclusion floor is high, so escalate multiplicatively because
+failed bundles cost nothing.* That judgment is the agent's, and it is the lever that actually wins
+the auction on a public endpoint.
+
+---
 
 ## The three required questions
 
@@ -128,9 +168,11 @@ slot, the auction result for that slot dies with it. Three consequences we engin
 _Run `npm run report` after a campaign to cite a real bundle-failure / missed-window case from the log._
 <!-- /AUTO:q3-skip -->
 
+---
+
 ## Failure handling (not happy-path)
 
-Failures are first-class: a deterministic classifier maps raw evidence (stream tx errors,
+Failures are first-class. A deterministic classifier maps raw evidence (stream tx errors,
 block-engine inflight status, `isBlockhashValid` at detection) onto failure classes
 (`expired_blockhash`, `fee_too_low`, `compute_exceeded`, `bundle_failure`, `unknown`), and the
 **agent** — not the orchestrator — decides what changes: refresh blockhash, re-price the tip
@@ -139,7 +181,10 @@ confidence, and rejected alternatives in `logs/agent-decisions.jsonl`.
 
 The campaign also **injects real faults**: the injector holds a fully-signed transaction until
 its blockhash genuinely expires on-chain (polling `isBlockhashValid`), then submits it anyway.
-The failure, detection, classification, and recovery that follow are all real.
+The failure, detection, classification, and recovery that follow are all real — nothing is
+mocked for the demo.
+
+---
 
 ## Operational lessons (learned the hard way)
 
@@ -187,8 +232,8 @@ The fixes are architectural, not parametric, and all three ship in the stack:
    > can't trust to fire is worse than no stream: it reports false `expired_blockhash`. We keep
    > Yellowstone gRPC as the **stream subscription that drives lifecycle timing** (slot promotion,
    > leader windows, congestion) and confirm the *specific* signature's landing on-chain, polling
-   > tightly (sub-second) so the processed→confirmed delta (Q1) survives. Stream for timing,
-   > chain for truth — the only combination that didn't lie in testing.
+   > tightly (sub-second) so the processed→confirmed delta (Q1) survives. **Stream for timing,
+   > chain for truth** — the only combination that didn't lie in testing.
 
 4. **The Yellowstone client version is load-bearing — pin `@triton-one/yellowstone-grpc@4.0.2`.**
    On Node 24.15 / darwin-arm64 the v5 client's `subscribe()` either hangs indefinitely or throws
@@ -203,6 +248,8 @@ The fixes are architectural, not parametric, and all three ship in the stack:
 <!-- AUTO:landing-summary -->
 _Run `npm run report` after a campaign to populate the landing rate and explorer links._
 <!-- /AUTO:landing-summary -->
+
+---
 
 ## Verifying the lifecycle log
 
@@ -221,3 +268,8 @@ check its producer against `targetLeaderIdentity` in the log.
 <!-- AUTO:explorer-links -->
 _Run `npm run report` after a campaign to populate explorer links._
 <!-- /AUTO:explorer-links -->
+
+---
+
+<sub>Submission map for fast judging: [`SUBMISSION.md`](./SUBMISSION.md) — every challenge
+requirement mapped to exactly where it's satisfied.</sub>
