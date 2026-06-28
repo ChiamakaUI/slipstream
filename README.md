@@ -2,7 +2,7 @@
 
 ### Ride the leader. Land low-latency.
 
-> **▶ Watch the 3-minute demo:** **https://youtu.be/REPLACE_WITH_VIDEO_ID**
+> **▶ Watch the 3-minute demo:** **https://youtu.be/CW6DEat56wk?si=T3rUGoJ7OrasYeId**
 > **🖥 Live ops console:** https://melodic-caramel-c6e7e5.netlify.app · **📐 Architecture doc:** same URL → *Architecture* tab
 > **Network:** mainnet-beta · **Agent:** Claude Haiku 4.5 · built for the **Superteam Nigeria Advanced Infrastructure Challenge**
 
