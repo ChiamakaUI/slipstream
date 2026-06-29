@@ -65,7 +65,9 @@ Open-source with setup instructions (README *Run it yourself*), working mainnet 
 handling (`src/stream/geyser.ts` single-flight exponential backoff), real Jito bundle construction,
 dynamic tips, correct commitment levels, and a clean separation between the AI layer (`src/agent/`)
 and the transaction layer (everything else — the agent never touches RPC or signing). Failure
-handling is first-class; the happy path is not the point.
+handling is first-class; the happy path is not the point. **Engineering rigor:** offline unit tests
+for the two decision modules (`test/unit.test.ts` — `npm test`, 13 deterministic cases) and **CI**
+(`.github/workflows/ci.yml`: typecheck + tests on every push).
 
 ---
 
