@@ -3,5 +3,10 @@
   command = "npm run build"
   publish = ".next"
 
+  # The hosted dashboard defaults to replay (populated instantly, no live server needed).
+  # Appending ?live to the URL streams from the Railway control server instead.
+  [build.environment]
+    NEXT_PUBLIC_LIVE_URL = "https://slipstream-production-1e16.up.railway.app"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"

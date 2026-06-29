@@ -3,7 +3,7 @@
 ### Ride the leader. Land low-latency.
 
 > **▶ Watch the 3-minute demo:** **https://youtu.be/CW6DEat56wk?si=T3rUGoJ7OrasYeId**
-> **🖥 Live ops console:** https://melodic-caramel-c6e7e5.netlify.app · **📐 Architecture doc:** same URL → *Architecture* tab
+> **🖥 Live ops console:** https://melodic-caramel-c6e7e5.netlify.app/?replay · **📐 Architecture doc:** [Notion](https://wise-sandal-b34.notion.site/Slipstream-Architecture-Document-a6e52d96a8d648a08ea2a1576a8f316f) (also the console's *Architecture* tab)
 > **Network:** mainnet-beta · **Agent:** Claude Haiku 4.5 · built for the **Superteam Nigeria Advanced Infrastructure Challenge**
 
 ---
@@ -34,9 +34,10 @@ tx index 16). Slot numbers in the lifecycle log are real.
 
 ## See it live (60-second tour)
 
-1. **Open the [live console](https://melodic-caramel-c6e7e5.netlify.app).** It boots into **replay**
+1. **Open the [live console](https://melodic-caramel-c6e7e5.netlify.app/?replay).** It boots into **replay**
    of a recorded mainnet campaign — no setup, no spend. Watch a bundle move through the
    **Execution Pipeline** and the **Landing Probability** read its odds in real time.
+   (Append `?live` instead to stream a running campaign from the control server.)
 2. **Click bundle `B2`** in *Live Orchestrations* to open its **Retry Ladder**. This is the whole
    thesis in one panel: tip `0.0000` → **dropped**, `0.0003` → **dropped**, `0.0036` →
    **CONFIRMED**. The agent escalated the tip until it crossed the inclusion floor.
@@ -58,10 +59,12 @@ npm run run:campaign        # 12 bundles, 2 fault injections
 npm run report              # turn logs/ into report.md (numbers + explorer links)
 ```
 
-`npm run report` reads `logs/lifecycle.jsonl` + `logs/agent-decisions.jsonl` and writes
-`logs/report.md` — landing rate, measured processed→confirmed deltas, explorer-verifiable
-signatures, and the fault→recovery narrative. It **refuses to certify a run that used the MOCK
-agent**, so every figure it emits comes from a real, live-agent campaign.
+`npm run report` reads `lifecycle.jsonl` + `agent-decisions.jsonl` and writes `report.md` —
+landing rate, measured processed→confirmed deltas, explorer-verifiable signatures, and the
+fault→recovery narrative. It reads `logs/` after you run a campaign, and **falls back to the
+committed judged run in `dashboard/public/data/` automatically** — so a fresh clone can run
+`npm run report` with zero setup. It **refuses to certify a run that used the MOCK agent**, so
+every figure it emits comes from a real, live-agent campaign.
 
 `.env`:
 
@@ -115,7 +118,7 @@ measurement of **how fast stake-weighted consensus is forming**:
   skipped — the block exists but the network is slow to commit to it.
 
 <!-- AUTO:q1-deltas -->
-_Run `npm run report` after a campaign to populate measured processed→confirmed deltas._
+Across **8** landed bundles in the latest campaign we measured processed→confirmed of **0 ms–1 ms** (median **0 ms**), consistent with low-congestion conditions — stake-weighted votes landing within 1–2 slots. Per-bundle deltas are in `logs/lifecycle.jsonl`.
 <!-- /AUTO:q1-deltas -->
 
 We timestamp each stage by polling `getSignatureStatuses` from submission (every
@@ -165,7 +168,7 @@ slot, the auction result for that slot dies with it. Three consequences we engin
    window.
 
 <!-- AUTO:q3-skip -->
-_Run `npm run report` after a campaign to cite a real bundle-failure / missed-window case from the log._
+Observed in the latest campaign: entry `0a6207fe` hit `bundle_failure` (block-engine `Invalid` + on-chain absence) and recovered to `finalized` after 2 attempt(s) — the classifier treated block-engine status as primary evidence and handed the agent the leader-schedule context to drive the next attempt.
 <!-- /AUTO:q3-skip -->
 
 ---
@@ -246,7 +249,7 @@ The fixes are architectural, not parametric, and all three ship in the stack:
    names. After pinning v4.0.2 the probe streams ~160 slots in 12 s, green every run.
 
 <!-- AUTO:landing-summary -->
-_Run `npm run report` after a campaign to populate the landing rate and explorer links._
+**Latest campaign:** landed **8/8 (100%)** with the live `claude-haiku-4-5-20251001` agent. Example explorer-verifiable landings: [`3NDDQAtPkUnaQCj5…`](https://solscan.io/tx/3NDDQAtPkUnaQCj5jkpZocRajihBFZY5kQQ1VcwkMS352EgvEwqiSGgqawCiF93dE4KWL9fHawXF3KW3woaDDP6F), [`32LoW93VuqcaTV9r…`](https://solscan.io/tx/32LoW93VuqcaTV9r53JgAvUeYCk8qdrzsjpFMMKfQQTEPehBCnFYStk1V225EEBfSaSCuBurds8wvu8UH3wcJJVu), [`4PG8B6ATWZs8WjWm…`](https://solscan.io/tx/4PG8B6ATWZs8WjWmAZXwyeTEMVsTYNCo9XsDRUhGkyNkmqYxfRBa8mahxxnj6jQH9bGRWTsNCXyucxv4n464wCBq).
 <!-- /AUTO:landing-summary -->
 
 ---
@@ -258,15 +261,19 @@ signature, blockhash fetch slot, tip basis (formula inputs included), target lea
 stage timestamps, failure classification, and the IDs of the agent decisions that drove each
 retry. Landed entries' slots and signatures can be checked on any explorer.
 
-**Leader targeting is verified, not just claimed.** After a bundle lands we call
-`getSlotLeaders` on the landed slot and compare the actual block producer to the
-`targetLeaderIdentity` we captured at submit time (`landedSlotLeader` / `targetLeaderMatched`
-on each attempt). `npm run report` summarises how many landed bundles hit the exact targeted
-Jito leader's slot — and you can confirm it independently: open the slot on any explorer and
-check its producer against `targetLeaderIdentity` in the log.
+**Leader targeting is verifiable, not just claimed.** After a bundle lands the stack calls
+`getSlotLeaders` on the landed slot and compares the actual block producer to the
+`targetLeaderIdentity` captured at submit time (`landedSlotLeader` / `targetLeaderMatched`
+on each attempt). When a run records that comparison, `npm run report` prints a **Leader
+verification** line counting how many landed bundles hit the exact targeted Jito leader's slot.
+Either way you can confirm it independently: open the slot on any explorer and check its producer
+against `targetLeaderIdentity` in the log.
 
 <!-- AUTO:explorer-links -->
-_Run `npm run report` after a campaign to populate explorer links._
+Example landed signatures from the latest campaign — check the slot + signature on any explorer:
+- slot 428772323 — [`3NDDQAtPkUnaQCj5…`](https://solscan.io/tx/3NDDQAtPkUnaQCj5jkpZocRajihBFZY5kQQ1VcwkMS352EgvEwqiSGgqawCiF93dE4KWL9fHawXF3KW3woaDDP6F)
+- slot 428772942 — [`32LoW93VuqcaTV9r…`](https://solscan.io/tx/32LoW93VuqcaTV9r53JgAvUeYCk8qdrzsjpFMMKfQQTEPehBCnFYStk1V225EEBfSaSCuBurds8wvu8UH3wcJJVu)
+- slot 428773465 — [`4PG8B6ATWZs8WjWm…`](https://solscan.io/tx/4PG8B6ATWZs8WjWmAZXwyeTEMVsTYNCo9XsDRUhGkyNkmqYxfRBa8mahxxnj6jQH9bGRWTsNCXyucxv4n464wCBq)
 <!-- /AUTO:explorer-links -->
 
 ---

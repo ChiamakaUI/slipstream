@@ -10,9 +10,10 @@ const LIVE_URL = LIVE_BASE + "/events";
 
 /**
  * Connects the store to data:
- *   - default: try the live SSE server; if it doesn't connect in ~2.6s, replay.
- *   - ?live   : live only (no replay fallback).
- *   - ?replay : replay the committed logs only (what the hosted page uses).
+ *   - default: replay the committed logs immediately — a judge lands on a populated
+ *     dashboard with no idle flash and no dependency on a running live server.
+ *   - ?live   : connect to the live SSE server; if it doesn't open in ~2.6s, fall back to replay.
+ *   - ?replay : replay only (same as default; kept for explicit links).
  */
 export function useDashboard(): DashState {
   const storeRef = useRef<DashboardStore>();
@@ -22,7 +23,6 @@ export function useDashboard(): DashState {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const forceReplay = params.has("replay");
     const forceLive = params.has("live");
     let player: PlayerHandle | null = null;
     let es: EventSource | null = null;
@@ -42,7 +42,7 @@ export function useDashboard(): DashState {
       player = playReplay(evs, (e) => store.applyEvent(e), { loop: true });
     };
 
-    if (forceReplay) {
+    if (!forceLive) {
       startReplay();
     } else {
       store.setMode("connecting");
@@ -50,7 +50,7 @@ export function useDashboard(): DashState {
         es = new EventSource(LIVE_URL);
         let connected = false;
         fallbackTimer = setTimeout(() => {
-          if (!connected && !forceLive) {
+          if (!connected) {
             es?.close();
             es = null;
             startReplay();
@@ -69,7 +69,7 @@ export function useDashboard(): DashState {
           }
         };
         es.onerror = () => {
-          if (!connected && !forceLive) {
+          if (!connected) {
             if (fallbackTimer) clearTimeout(fallbackTimer);
             es?.close();
             es = null;

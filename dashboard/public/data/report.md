@@ -14,16 +14,16 @@ Across **8** landed bundles we measured processed→confirmed of **0 ms–1 ms**
 
 ## Landed bundles (explorer-verifiable)
 
-| outcome | slot | tip (lamports) | proc→conf | conf→final | attempts | signature |
-|---|---|---|---|---|---|---|
-| finalized | 428772323 | 3,200,000 | 0 ms | 11613 ms | 2 | [`3NDDQAtPkUnaQCj5…`](https://solscan.io/tx/3NDDQAtPkUnaQCj5jkpZocRajihBFZY5kQQ1VcwkMS352EgvEwqiSGgqawCiF93dE4KWL9fHawXF3KW3woaDDP6F) |
-| finalized | 428772942 | 3,600,000 | 1 ms | 12152 ms | 3 | [`32LoW93VuqcaTV9r…`](https://solscan.io/tx/32LoW93VuqcaTV9r53JgAvUeYCk8qdrzsjpFMMKfQQTEPehBCnFYStk1V225EEBfSaSCuBurds8wvu8UH3wcJJVu) |
-| finalized | 428773465 | 3,600,000 | 1 ms | 11533 ms | 3 | [`4PG8B6ATWZs8WjWm…`](https://solscan.io/tx/4PG8B6ATWZs8WjWmAZXwyeTEMVsTYNCo9XsDRUhGkyNkmqYxfRBa8mahxxnj6jQH9bGRWTsNCXyucxv4n464wCBq) |
-| finalized | 428774343 | 3,900,000 | 0 ms | 12093 ms | 4 | [`26S4ihoCFynjEGjL…`](https://solscan.io/tx/26S4ihoCFynjEGjLuRniDquBXHbJ9QdTXfjDprmjL7kkSKW446hyt3ivBaWsh9hEJmmYmYdAwRZJzzj6rSzGVmAc) |
-| finalized | 428774655 | 3,400,000 | 0 ms | 12157 ms | 2 | [`2W8wr6Uwyjcw3swk…`](https://solscan.io/tx/2W8wr6Uwyjcw3swko332BvprepK8gAVKZuo13gvB52PRjwjjCZHVgCq5hmUWLAT1MwpjjJnK9wNeSw4ctDYTidTn) |
-| finalized | 428775252 | 2,800,000 | 0 ms | 11360 ms | 3 | [`ZhWjuAdLdGCPZpde…`](https://solscan.io/tx/ZhWjuAdLdGCPZpdeRkKsn4jpvGUZMTCRdXZG2439QNPmAHbChoXnQmyMyBWyaxeVAbBHdSDrgnggSQyQWPGStoK) |
-| finalized | 428775778 | 3,200,000 | 1 ms | 12080 ms | 3 | [`3TYFgDnSjL7bwKMU…`](https://solscan.io/tx/3TYFgDnSjL7bwKMUkTdE5R9yewFYNEE9j8HPad5tz9PUCyqYw3Vd2BdW4cWEj23KeZZkBi78xAPoAjL6RPrqKw7k) |
-| finalized | 428776388 | 3,600,000 | 0 ms | 12583 ms | 3 | [`4uTiH2ibaatmoaSt…`](https://solscan.io/tx/4uTiH2ibaatmoaStKiYS7NNN4knT1epjY68fLDh4SJTrCvQEG1Gn7kpXPKp2ieJruupVrt1z3yHCEucSVn1Y3iyK) |
+| outcome | slot | tip (lamports) | proc→conf | conf→final | attempts | leader | signature |
+|---|---|---|---|---|---|---|---|
+| finalized | 428772323 | 3,200,000 | 0 ms | 11613 ms | 2 | — | [`3NDDQAtPkUnaQCj5…`](https://solscan.io/tx/3NDDQAtPkUnaQCj5jkpZocRajihBFZY5kQQ1VcwkMS352EgvEwqiSGgqawCiF93dE4KWL9fHawXF3KW3woaDDP6F) |
+| finalized | 428772942 | 3,600,000 | 1 ms | 12152 ms | 3 | — | [`32LoW93VuqcaTV9r…`](https://solscan.io/tx/32LoW93VuqcaTV9r53JgAvUeYCk8qdrzsjpFMMKfQQTEPehBCnFYStk1V225EEBfSaSCuBurds8wvu8UH3wcJJVu) |
+| finalized | 428773465 | 3,600,000 | 1 ms | 11533 ms | 3 | — | [`4PG8B6ATWZs8WjWm…`](https://solscan.io/tx/4PG8B6ATWZs8WjWmAZXwyeTEMVsTYNCo9XsDRUhGkyNkmqYxfRBa8mahxxnj6jQH9bGRWTsNCXyucxv4n464wCBq) |
+| finalized | 428774343 | 3,900,000 | 0 ms | 12093 ms | 4 | — | [`26S4ihoCFynjEGjL…`](https://solscan.io/tx/26S4ihoCFynjEGjLuRniDquBXHbJ9QdTXfjDprmjL7kkSKW446hyt3ivBaWsh9hEJmmYmYdAwRZJzzj6rSzGVmAc) |
+| finalized | 428774655 | 3,400,000 | 0 ms | 12157 ms | 2 | — | [`2W8wr6Uwyjcw3swk…`](https://solscan.io/tx/2W8wr6Uwyjcw3swko332BvprepK8gAVKZuo13gvB52PRjwjjCZHVgCq5hmUWLAT1MwpjjJnK9wNeSw4ctDYTidTn) |
+| finalized | 428775252 | 2,800,000 | 0 ms | 11360 ms | 3 | — | [`ZhWjuAdLdGCPZpde…`](https://solscan.io/tx/ZhWjuAdLdGCPZpdeRkKsn4jpvGUZMTCRdXZG2439QNPmAHbChoXnQmyMyBWyaxeVAbBHdSDrgnggSQyQWPGStoK) |
+| finalized | 428775778 | 3,200,000 | 1 ms | 12080 ms | 3 | — | [`3TYFgDnSjL7bwKMU…`](https://solscan.io/tx/3TYFgDnSjL7bwKMUkTdE5R9yewFYNEE9j8HPad5tz9PUCyqYw3Vd2BdW4cWEj23KeZZkBi78xAPoAjL6RPrqKw7k) |
+| finalized | 428776388 | 3,600,000 | 0 ms | 12583 ms | 3 | — | [`4uTiH2ibaatmoaSt…`](https://solscan.io/tx/4uTiH2ibaatmoaStKiYS7NNN4knT1epjY68fLDh4SJTrCvQEG1Gn7kpXPKp2ieJruupVrt1z3yHCEucSVn1Y3iyK) |
 
 Landed-tip range: **2,800,000–3,900,000 lamports** (median 3,600,000).
 

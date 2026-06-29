@@ -4,3 +4,4 @@ dist/
 *.keypair.json
 logs/
 *.log
+.DS_Store

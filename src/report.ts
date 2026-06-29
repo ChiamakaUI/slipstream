@@ -1,11 +1,26 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { config } from "./config.js";
 import type { AgentDecision, LifecycleEntry, StageRecord } from "./types.js";
 
-/** Campaign reporter: reduces the append-only logs to logs/report.md. */
+/** Campaign reporter: reduces the append-only logs to <dir>/report.md. */
 
-const dir = config.logDir;
+/**
+ * Resolve which log directory to read:
+ *   1. an explicit LOG_DIR override (a fresh campaign writes here), else
+ *   2. ./logs if it holds a campaign (the local default), else
+ *   3. ./dashboard/public/data — the committed judged run, so a judge who just
+ *      clones the repo can run `npm run report` with zero setup and it works.
+ */
+function resolveLogDir(): string {
+  if (process.env.LOG_DIR) return process.env.LOG_DIR;
+  const local = "./logs";
+  if (existsSync(join(local, "lifecycle.jsonl"))) return local;
+  const committed = "./dashboard/public/data";
+  if (existsSync(join(committed, "lifecycle.jsonl"))) return committed;
+  return local;
+}
+
+const dir = resolveLogDir();
 
 function readJsonl<T>(name: string): T[] {
   const path = join(dir, name);

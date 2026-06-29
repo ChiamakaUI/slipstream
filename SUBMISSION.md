@@ -2,10 +2,10 @@
 
 This document maps every requirement of the **Advanced Infrastructure Challenge – Build a Smart
 Transaction Stack** to exactly where it is satisfied in this repository, so the judging is fast and
-nothing is missed. Deeper prose lives in [`README.md`](./README.md); the live system and the
-architecture document are the deployed dashboard.
+nothing is missed. Deeper prose lives in [`README.md`](./README.md).
 
-- **Live ops console + architecture document:** `<TODO: Vercel URL>` (dashboard → **Architecture** tab)
+- **Live ops console:** https://melodic-caramel-c6e7e5.netlify.app/?replay (boots into replay of a real mainnet campaign; append `?live` to stream the control server)
+- **Architecture Design Document:** https://wise-sandal-b34.notion.site/Slipstream-Architecture-Document-a6e52d96a8d648a08ea2a1576a8f316f (also the console's **Architecture** tab)
 - **Source:** this repo · **Network:** mainnet-beta · **Agent:** Claude Haiku 4.5
 
 ---
@@ -16,16 +16,17 @@ architecture document are the deployed dashboard.
 A public document covering architecture, data flow, infrastructure decisions, failure-handling
 strategy, and AI-agent responsibilities, with diagrams.
 
-→ **Dashboard → Architecture tab** (`dashboard/components/ArchitectureView.tsx`): an inline
-data-flow diagram (OBSERVE → ACT → REASON with the agent feedback loop), component map,
-infrastructure-decision cards, the failure-classifier table, and the agent's OWNS/NEVER
-responsibilities. Ships in the same deploy as the live console — one public URL.
+→ **[Architecture Design Document on Notion](https://wise-sandal-b34.notion.site/Slipstream-Architecture-Document-a6e52d96a8d648a08ea2a1576a8f316f)**:
+executive summary, two Mermaid diagrams (the three-plane data flow + the submission/recovery
+sequence), component map, infrastructure-decision write-ups, the failure-classifier table, the
+security model, and the agent's OWNS/NEVER responsibilities. Mirrored in the console's
+**Architecture** tab (`dashboard/components/ArchitectureView.tsx`).
 
 ### 2 · The Transaction Stack
 | Sub-requirement | Where |
 |---|---|
 | Monitor live slot + leader data via Yellowstone gRPC | `src/stream/geyser.ts` (slots-only stream, single-flight reconnect + backoff) |
-| Detect correct leader window for submission | `src/jito/` `nextScheduledLeader` + `main.ts` leader-window targeting; **post-landing `getSlotLeaders` verification** confirms each landed bundle was produced by the targeted leader (see report's *Leader verification* line) |
+| Detect correct leader window for submission | `src/jito/` `nextScheduledLeader` + `main.ts` leader-window targeting; **post-landing `getSlotLeaders` verification** (`main.ts` records `targetLeaderMatched` per attempt) — when a run captures it, the report prints a *Leader verification* line, and any landed slot is explorer-checkable against `targetLeaderIdentity` |
 | Construct & submit Jito bundles | `src/jito/` (payload + tip in one tx) |
 | Dynamic tips from real tip-account data (no hardcoding) | `src/tip/` — `clamp(ema50 × congestion, 1000, maxTip)` baseline; the agent owns escalation. Inputs logged per attempt |
 | Lifecycle: Submitted → Processed → Confirmed → Finalized | `src/lifecycle/` + `pollLanding()` in `main.ts` |
@@ -79,16 +80,18 @@ handling is first-class; the happy path is not the point.
 npm install
 cp .env.example .env          # add your own RPC / gRPC / ANTHROPIC_API_KEY / keypair
 npm run smoke                 # exercises all 3 integrations with ZERO SOL
-npm run report                # regenerate logs/report.md from the committed logs
+npm run report                # reads the committed run in dashboard/public/data/ — zero setup
 ```
-Open `logs/lifecycle.jsonl`, take any landed entry's `signature` + `slot`, and confirm it on
-[solscan.io](https://solscan.io) — same wallet, same builder, real auction.
+Open `dashboard/public/data/lifecycle.jsonl`, take any landed entry's `signature` + `slot`, and
+confirm it on [solscan.io](https://solscan.io) — same wallet, same builder, real auction.
 
 ---
 
-## Pre-submission checklist
-- [ ] Judged campaign run (`npm run run:campaign`, ≥10 bundles, 2 faults, Haiku agent) on a fresh `logs/`
-- [ ] `npm run report` run → README evidence blocks + `logs/report.md` populated with real numbers
-- [ ] Dashboard deployed to a public URL; that URL pasted into `README.md` and `SUBMISSION.md`
-- [ ] `logs/lifecycle.jsonl` + `logs/agent-decisions.jsonl` committed (the judged run only)
-- [ ] Spot-check 2–3 signatures on an explorer
+## Submission status
+- [x] Live-agent campaign committed: **8 logical transactions / 23 real bundle submissions / 2
+  injected faults, both autonomously recovered** — 8/8 landed to `finalized` (Haiku agent, no MOCK).
+- [x] `npm run report` → `report.md` + README evidence blocks populated with real numbers and
+  explorer links (regenerable from `dashboard/public/data/`).
+- [x] Dashboard + architecture document deployed to public URLs (linked above), boots into replay.
+- [x] `lifecycle.jsonl` + `agent-decisions.jsonl` committed in `dashboard/public/data/`.
+- [x] Signatures spot-checkable on an explorer (see the README landed-bundles list).
