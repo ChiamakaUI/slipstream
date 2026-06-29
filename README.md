@@ -104,7 +104,7 @@ measurement of **how fast stake-weighted consensus is forming**:
   skipped — the block exists but the network is slow to commit to it.
 
 <!-- AUTO:q1-deltas -->
-Across **8** landed bundles in the latest campaign we measured processed→confirmed of **0 ms–1 ms** (median **0 ms**), consistent with low-congestion conditions — stake-weighted votes landing within 1–2 slots. Per-bundle deltas are in `logs/lifecycle.jsonl`.
+Across **12** landed bundles in the latest campaign we measured processed→confirmed of **0 ms–1 ms** (median **0 ms**), consistent with low-congestion conditions — stake-weighted votes landing within 1–2 slots. Per-bundle deltas are in `logs/lifecycle.jsonl`.
 <!-- /AUTO:q1-deltas -->
 
 We timestamp each stage by polling `getSignatureStatuses` from submission (every
@@ -154,7 +154,7 @@ slot, the auction result for that slot dies with it. Three consequences we engin
    window.
 
 <!-- AUTO:q3-skip -->
-Observed in the latest campaign: entry `0a6207fe` hit `bundle_failure` (block-engine `Invalid` + on-chain absence) and recovered to `finalized` after 2 attempt(s) — the classifier treated block-engine status as primary evidence and handed the agent the leader-schedule context to drive the next attempt.
+Observed in the latest campaign: entry `eb57f67c` hit `bundle_failure` (block-engine `Invalid` + on-chain absence) and recovered to `finalized` after 3 attempt(s) — the classifier treated block-engine status as primary evidence and handed the agent the leader-schedule context to drive the next attempt.
 <!-- /AUTO:q3-skip -->
 
 ---
@@ -235,7 +235,7 @@ The fixes are architectural, not parametric, and all three ship in the stack:
    names. After pinning v4.0.2 the probe streams ~160 slots in 12 s, green every run.
 
 <!-- AUTO:landing-summary -->
-**Latest campaign:** landed **8/8 (100%)** with the live `claude-haiku-4-5-20251001` agent. Example explorer-verifiable landings: [`3NDDQAtPkUnaQCj5…`](https://solscan.io/tx/3NDDQAtPkUnaQCj5jkpZocRajihBFZY5kQQ1VcwkMS352EgvEwqiSGgqawCiF93dE4KWL9fHawXF3KW3woaDDP6F), [`32LoW93VuqcaTV9r…`](https://solscan.io/tx/32LoW93VuqcaTV9r53JgAvUeYCk8qdrzsjpFMMKfQQTEPehBCnFYStk1V225EEBfSaSCuBurds8wvu8UH3wcJJVu), [`4PG8B6ATWZs8WjWm…`](https://solscan.io/tx/4PG8B6ATWZs8WjWmAZXwyeTEMVsTYNCo9XsDRUhGkyNkmqYxfRBa8mahxxnj6jQH9bGRWTsNCXyucxv4n464wCBq).
+**Latest campaign:** landed **12/12 (100%)** with the live `claude-haiku-4-5-20251001` agent; **3/12** landed in the exact targeted Jito leader's slot (post-landing `getSlotLeaders` verification). Example explorer-verifiable landings: [`4iPV6qA5UM1KES2P…`](https://solscan.io/tx/4iPV6qA5UM1KES2PeqBLPmzmqGALk7gJGEwXgDDDQ9A5oh3pwmxsYHizBwWf97hxUqVQ2az8BRMZjdXq6VPcHf8m), [`zaMKaNhcTfTG39XD…`](https://solscan.io/tx/zaMKaNhcTfTG39XDrv1jvx6aaGg24914f7nnUzarxsC23tqUg9nQdj9jpRs1DDJvK3e9ZjzwkAyUUo9K3T9G9ZA), [`4vSFm4fmLcEiVVBa…`](https://solscan.io/tx/4vSFm4fmLcEiVVBar2mWmeyFSTjFjKuEhHfYfAhwSsHbuEeWuwf2548YxSdwfLSLAraYzRKyEnVXoX4YQhG3yoHu).
 <!-- /AUTO:landing-summary -->
 
 ---
@@ -291,9 +291,9 @@ against `targetLeaderIdentity` in the log.
 
 <!-- AUTO:explorer-links -->
 Example landed signatures from the latest campaign — check the slot + signature on any explorer:
-- slot 428772323 — [`3NDDQAtPkUnaQCj5…`](https://solscan.io/tx/3NDDQAtPkUnaQCj5jkpZocRajihBFZY5kQQ1VcwkMS352EgvEwqiSGgqawCiF93dE4KWL9fHawXF3KW3woaDDP6F)
-- slot 428772942 — [`32LoW93VuqcaTV9r…`](https://solscan.io/tx/32LoW93VuqcaTV9r53JgAvUeYCk8qdrzsjpFMMKfQQTEPehBCnFYStk1V225EEBfSaSCuBurds8wvu8UH3wcJJVu)
-- slot 428773465 — [`4PG8B6ATWZs8WjWm…`](https://solscan.io/tx/4PG8B6ATWZs8WjWmAZXwyeTEMVsTYNCo9XsDRUhGkyNkmqYxfRBa8mahxxnj6jQH9bGRWTsNCXyucxv4n464wCBq)
+- slot 429626720 — [`4iPV6qA5UM1KES2P…`](https://solscan.io/tx/4iPV6qA5UM1KES2PeqBLPmzmqGALk7gJGEwXgDDDQ9A5oh3pwmxsYHizBwWf97hxUqVQ2az8BRMZjdXq6VPcHf8m)
+- slot 429627051 — [`zaMKaNhcTfTG39XD…`](https://solscan.io/tx/zaMKaNhcTfTG39XDrv1jvx6aaGg24914f7nnUzarxsC23tqUg9nQdj9jpRs1DDJvK3e9ZjzwkAyUUo9K3T9G9ZA)
+- slot 429627562 — [`4vSFm4fmLcEiVVBa…`](https://solscan.io/tx/4vSFm4fmLcEiVVBar2mWmeyFSTjFjKuEhHfYfAhwSsHbuEeWuwf2548YxSdwfLSLAraYzRKyEnVXoX4YQhG3yoHu)
 <!-- /AUTO:explorer-links -->
 
 ---

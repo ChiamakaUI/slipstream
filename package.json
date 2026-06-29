@@ -12,7 +12,7 @@
     "smoke": "tsx src/smoke.ts",
     "run:campaign": "tsx src/main.ts --bundles 12 --inject-faults 2",
     "report": "tsx src/report.ts",
-    "dashboard:data": "mkdir -p dashboard/public/data && cp logs/lifecycle.jsonl logs/agent-decisions.jsonl dashboard/public/data/ && echo 'synced real logs -> dashboard/public/data'",
+    "dashboard:data": "mkdir -p dashboard/public/data && cp logs/lifecycle.jsonl logs/agent-decisions.jsonl dashboard/public/data/ && [ -f logs/report.md ] && cp logs/report.md dashboard/public/data/ || true; echo 'synced real logs -> dashboard/public/data'",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts"
   },
