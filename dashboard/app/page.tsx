@@ -36,7 +36,7 @@ export default function Page() {
   const [view, setView] = useState<View>("dashboard");
 
   return (
-    <div className="h-screen flex flex-col scanline">
+    <div className="h-[100dvh] flex flex-col scanline">
       <TopBar s={s} view={view} onView={setView} />
 
       {view === "architecture" ? (
