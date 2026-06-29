@@ -27,8 +27,8 @@ classified deterministically before the agent ever sees it.
 > in the stack. → [Operational lessons](#operational-lessons-learned-the-hard-way)
 
 **Don't trust this README — check the chain.** Every landed slot and signature below is
-explorer-verifiable, including one finalized **top-of-block** (`5bQBJ7oj…`, slot `426110964`,
-tx index 16). Slot numbers in the lifecycle log are real.
+explorer-verifiable and the slot numbers in the lifecycle log are real — one landing even
+finalized **top-of-block** (detailed in [Operational lessons](#operational-lessons-learned-the-hard-way)).
 
 ---
 
@@ -45,38 +45,6 @@ tx index 16). Slot numbers in the lifecycle log are real.
    and the alternatives it rejected — structured JSON, not a black box.
 4. **Open the *Architecture* tab** for the full design document: data-flow diagram, component map,
    infrastructure decisions, and the agent's OWNS / NEVER responsibilities.
-
----
-
-## Quick start
-
-```bash
-npm install
-cp .env.example .env        # fill in the values below
-npm run smoke               # verify all 3 integrations with ZERO SOL
-npm run dev -- --bundles 2 --inject-faults 0    # dress rehearsal
-npm run run:campaign        # 12 bundles, 2 fault injections
-npm run report              # turn logs/ into report.md (numbers + explorer links)
-```
-
-`npm run report` reads `lifecycle.jsonl` + `agent-decisions.jsonl` and writes `report.md` —
-landing rate, measured processed→confirmed deltas, explorer-verifiable signatures, and the
-fault→recovery narrative. It reads `logs/` after you run a campaign, and **falls back to the
-committed judged run in `dashboard/public/data/` automatically** — so a fresh clone can run
-`npm run report` with zero setup. It **refuses to certify a run that used the MOCK agent**, so
-every figure it emits comes from a real, live-agent campaign.
-
-`.env`:
-
-| var | what |
-|---|---|
-| `GRPC_ENDPOINT` / `GRPC_X_TOKEN` | Yellowstone gRPC (PublicNode personal token works; a dedicated provider is better) |
-| `RPC_URL` | standard JSON-RPC endpoint — a dedicated provider (Helius/QuickNode/Solinfra) is strongly preferred over the public `api.mainnet-beta` endpoint, which is rate-limited and lags |
-| `ANTHROPIC_API_KEY` | powers the retry agent (`AGENT_MODEL`, default claude-haiku-4-5) |
-| `KEYPAIR_PATH` | payer keypair JSON (fund with ≥0.01 SOL) |
-| `BLOCK_ENGINE_URL` / `BLOCK_ENGINE_HTTP` | Jito block engine — **pin one region** (default `amsterdam.mainnet.block-engine.jito.wtf`), not the global anycast endpoint (see Operational lessons) |
-| `JITO_AUTH_KEY` _(optional)_ | x-jito-auth API key for higher rate limits; unset = unauthenticated default sends, which Jito supports |
-| `JITO_AUTH_KEYPAIR_PATH` _(optional)_ | searcher keypair for gRPC challenge-response auth; unset = default sends |
 
 ---
 
@@ -254,9 +222,41 @@ The fixes are architectural, not parametric, and all three ship in the stack:
 
 ---
 
+## Run it yourself
+
+```bash
+npm install
+cp .env.example .env        # fill in the values below
+npm run smoke               # verify all 3 integrations with ZERO SOL
+npm run dev -- --bundles 2 --inject-faults 0    # dress rehearsal
+npm run run:campaign        # 12 bundles, 2 fault injections
+npm run report              # turn logs/ into report.md (numbers + explorer links)
+```
+
+`npm run report` reads `lifecycle.jsonl` + `agent-decisions.jsonl` and writes `report.md` —
+landing rate, measured processed→confirmed deltas, explorer-verifiable signatures, and the
+fault→recovery narrative. It reads `logs/` after you run a campaign, and **falls back to the
+committed judged run in `dashboard/public/data/` automatically** — so a fresh clone can run
+`npm run report` with zero setup. It **refuses to certify a run that used the MOCK agent**, so
+every figure it emits comes from a real, live-agent campaign.
+
+`.env`:
+
+| var | what |
+|---|---|
+| `GRPC_ENDPOINT` / `GRPC_X_TOKEN` | Yellowstone gRPC (PublicNode personal token works; a dedicated provider is better) |
+| `RPC_URL` | standard JSON-RPC endpoint — a dedicated provider (Helius/QuickNode/Solinfra) is strongly preferred over the public `api.mainnet-beta` endpoint, which is rate-limited and lags |
+| `ANTHROPIC_API_KEY` | powers the retry agent (`AGENT_MODEL`, default claude-haiku-4-5) |
+| `KEYPAIR_PATH` | payer keypair JSON (fund with ≥0.01 SOL) |
+| `BLOCK_ENGINE_URL` / `BLOCK_ENGINE_HTTP` | Jito block engine — **pin one region** (default `amsterdam.mainnet.block-engine.jito.wtf`), not the global anycast endpoint (see Operational lessons) |
+| `JITO_AUTH_KEY` _(optional)_ | x-jito-auth API key for higher rate limits; unset = unauthenticated default sends, which Jito supports |
+| `JITO_AUTH_KEYPAIR_PATH` _(optional)_ | searcher keypair for gRPC challenge-response auth; unset = default sends |
+
+---
+
 ## Verifying the lifecycle log
 
-`logs/lifecycle.jsonl` — one JSON entry per logical transaction: every attempt with its
+`logs/lifecycle.jsonl` (committed at `dashboard/public/data/lifecycle.jsonl`) — one JSON entry per logical transaction: every attempt with its
 signature, blockhash fetch slot, tip basis (formula inputs included), target leader slot,
 stage timestamps, failure classification, and the IDs of the agent decisions that drove each
 retry. Landed entries' slots and signatures can be checked on any explorer.
