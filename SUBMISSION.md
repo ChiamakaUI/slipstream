@@ -6,6 +6,7 @@ nothing is missed. Deeper prose lives in [`README.md`](./README.md).
 
 - **Live ops console:** https://melodic-caramel-c6e7e5.netlify.app/?replay (boots into replay of a real mainnet campaign; append `?live` to stream the control server)
 - **Architecture Design Document:** https://wise-sandal-b34.notion.site/Slipstream-Architecture-Document-a6e52d96a8d648a08ea2a1576a8f316f (also the console's **Architecture** tab)
+- **Article (Content deliverable):** [`docs/article.md`](./docs/article.md) — "Landing Is the Hard Part: Building a Solana Transaction Stack That Wins the Jito Auction"
 - **Source:** this repo · **Network:** mainnet-beta · **Agent:** Claude Haiku 4.5
 
 ---

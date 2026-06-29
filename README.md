@@ -4,7 +4,7 @@
 > retry policy to an autonomous AI agent instead of hard-coding it.** Runs on mainnet-beta; every
 > landing below is explorer-verifiable.
 
-**[▶ 3-min demo](https://youtu.be/CW6DEat56wk?si=T3rUGoJ7OrasYeId)** · **[🖥 Live console](https://melodic-caramel-c6e7e5.netlify.app/?replay)** · **[📐 Architecture doc](https://wise-sandal-b34.notion.site/Slipstream-Architecture-Document-a6e52d96a8d648a08ea2a1576a8f316f)**
+**[▶ 3-min demo](https://youtu.be/CW6DEat56wk?si=T3rUGoJ7OrasYeId)** · **[🖥 Live console](https://melodic-caramel-c6e7e5.netlify.app/?replay)** · **[📐 Architecture doc](https://wise-sandal-b34.notion.site/Slipstream-Architecture-Document-a6e52d96a8d648a08ea2a1576a8f316f)** · **[📝 Article](./docs/article.md)**
 `mainnet-beta` · agent `Claude Haiku 4.5` · built for the Superteam Nigeria Advanced Infrastructure Challenge
 
 ---
