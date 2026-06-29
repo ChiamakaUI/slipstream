@@ -30,24 +30,27 @@ security model, and the agent's OWNS/NEVER responsibilities. Mirrored in the con
 | Construct & submit Jito bundles | `src/jito/` (payload + tip in one tx) |
 | Dynamic tips from real tip-account data (no hardcoding) | `src/tip/` — `clamp(ema50 × congestion, 1000, maxTip)` baseline; the agent owns escalation. Inputs logged per attempt |
 | Lifecycle: Submitted → Processed → Confirmed → Finalized | `src/lifecycle/` + `pollLanding()` in `main.ts` |
-| Timestamps, slot numbers, latency deltas | `logs/lifecycle.jsonl` (per-stage `observedAt`, `slot`, `deltaFromPrevMs`) |
+| Timestamps, slot numbers, latency deltas | `dashboard/public/data/lifecycle.jsonl` (per-stage `observedAt`, `slot`, `deltaFromPrevMs`) |
 | Classify failures (expired blockhash, low fee, compute, bundle failure) | `src/lifecycle/` deterministic classifier |
 | Confirm landing without trusting `sendBundle` | on-chain `getSignatureStatuses` — see README *Operational lessons #3* for why the stream notification is insufficient on this provider |
 | Automatic retries with blockhash refresh on expiry | agent decision → `main.ts` applies refresh + re-price + resubmit |
 
 ### 3 · Lifecycle Log (≥10 real submissions, ≥2 failures)
-→ `logs/lifecycle.jsonl` — one entry per logical transaction, every attempt with signature,
+**Committed run: 8 logical transactions across 23 real bundle submissions, with 2 injected failures
+— both autonomously recovered (8/8 landed to `finalized`).**
+
+→ `dashboard/public/data/lifecycle.jsonl` — one entry per logical transaction, every attempt with signature,
 blockhash fetch slot, tip basis, target leader, stage timestamps, and failure classification.
 The campaign injects **real** faults (`src/fault/` holds a signed tx until its blockhash expires
 on-chain), so the log carries genuine classified failures and their autonomous recoveries. Every
 landed slot + signature is checkable on any explorer. Regenerate the human summary with
-`npm run report` → `logs/report.md`.
+`npm run report` → `dashboard/public/data/report.md`.
 
 ### 4 · AI Agent — one real operational decision
 → **Autonomous Retry with Fault Injection** (+ failure reasoning + tip intelligence). `src/agent/`
 receives classified failure context and returns a decision JSON (`action`, `changes`, `reasoning`,
 `confidence`, rejected alternatives). The orchestrator (`main.ts`) holds **no retry policy** — it
-applies whatever the agent decides. Every decision is in `logs/agent-decisions.jsonl` and the
+applies whatever the agent decides. Every decision is in `dashboard/public/data/agent-decisions.jsonl` and the
 dashboard **Decisions** tab. Not a sequential wrapper: the retry path does not exist outside the
 agent's output.
 
@@ -57,7 +60,7 @@ network-health signal (Q1), why never fetch a blockhash at `finalized` (Q2), and
 a Jito leader skips its slot (Q3) — each backed by real logged observations.
 
 ### 6 · General
-Open-source with setup instructions (README *Quick start*), working mainnet prototype, reconnection
+Open-source with setup instructions (README *Run it yourself*), working mainnet prototype, reconnection
 handling (`src/stream/geyser.ts` single-flight exponential backoff), real Jito bundle construction,
 dynamic tips, correct commitment levels, and a clean separation between the AI layer (`src/agent/`)
 and the transaction layer (everything else — the agent never touches RPC or signing). Failure
@@ -68,9 +71,9 @@ handling is first-class; the happy path is not the point.
 ## Evaluation criteria → evidence
 | Criterion | Evidence |
 |---|---|
-| **Does it work?** | `logs/report.md` (landing rate, explorer-verifiable signatures) + the live dashboard |
+| **Does it work?** | `dashboard/public/data/report.md` (landing rate, explorer-verifiable signatures) + the live dashboard |
 | **Depth of integration** | real Jito block-engine + Yellowstone gRPC, no hardcoded tips, correct commitment ladder, on-chain truth over a lying block-engine status (README *Operational lessons*) |
-| **AI demonstration** | `logs/agent-decisions.jsonl` + Decisions tab — visible reasoning, confidence, rejected alternatives, real fault→recovery arcs |
+| **AI demonstration** | `dashboard/public/data/agent-decisions.jsonl` + Decisions tab — visible reasoning, confidence, rejected alternatives, real fault→recovery arcs |
 | **Explanation** | Architecture tab + README depth + the operational lessons learned the hard way |
 
 ---
