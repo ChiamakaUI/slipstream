@@ -71,6 +71,20 @@ export function TopBar({
           <span className={`w-1.5 h-1.5 rounded-full inline-block ${dot}`} />
           {modeLabel}
         </span>
+        {s.mode === "live" ? (
+          <a href="?replay" className="text-dim hover:text-fg transition-colors whitespace-nowrap">
+            ↺ Replay
+          </a>
+        ) : (
+          <a
+            href="?live"
+            title="Connect to the live campaign stream"
+            className="flex items-center gap-1 text-green hover:underline whitespace-nowrap"
+          >
+            <span className="w-1.5 h-1.5 rounded-full inline-block bg-green pulse-dot" />
+            Go Live ↗
+          </a>
+        )}
         <nav className="hidden lg:flex items-center gap-3 text-dim">
           {NAV.map((n) => (
             <button
