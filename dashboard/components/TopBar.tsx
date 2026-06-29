@@ -89,10 +89,15 @@ export function TopBar({
   return (
     <>
       <header className="flex items-center gap-3 sm:gap-5 px-3 sm:px-4 h-12 border-b border-line bg-panel/70 backdrop-blur shrink-0">
-        <div className="flex items-baseline gap-2 shrink-0">
-          <span className="text-cyan font-bold tracking-[0.18em] sm:tracking-[0.25em] text-sm">SLIPSTREAM</span>
+        <button
+          type="button"
+          onClick={() => onView("dashboard")}
+          title="Back to dashboard"
+          className="flex items-baseline gap-2 shrink-0 cursor-pointer"
+        >
+          <span className="text-cyan font-bold tracking-[0.18em] sm:tracking-[0.25em] text-sm hover:brightness-125 transition">SLIPSTREAM</span>
           <span className="text-[10px] text-dim hidden md:inline">smart tx stack</span>
-        </div>
+        </button>
 
         <div className="flex items-center gap-3 sm:gap-4 text-[11px] overflow-x-auto no-scrollbar">
           <Stat k="Slot" v={s.currentSlot ? s.currentSlot.toLocaleString() : "—"} />
