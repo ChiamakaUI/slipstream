@@ -1,16 +1,32 @@
 # Slipstream
 
-### Ride the leader. Land low-latency.
+> A smart Solana transaction stack that **lands Jito bundles under congestion — by handing the
+> retry policy to an autonomous AI agent instead of hard-coding it.** Runs on mainnet-beta; every
+> landing below is explorer-verifiable.
 
-> **▶ Watch the 3-minute demo:** **https://youtu.be/CW6DEat56wk?si=T3rUGoJ7OrasYeId**
-> **🖥 Live ops console:** https://melodic-caramel-c6e7e5.netlify.app/?replay · **📐 Architecture doc:** [Notion](https://wise-sandal-b34.notion.site/Slipstream-Architecture-Document-a6e52d96a8d648a08ea2a1576a8f316f) (also the console's *Architecture* tab)
-> **Network:** mainnet-beta · **Agent:** Claude Haiku 4.5 · built for the **Superteam Nigeria Advanced Infrastructure Challenge**
+**[▶ 3-min demo](https://youtu.be/CW6DEat56wk?si=T3rUGoJ7OrasYeId)** · **[🖥 Live console](https://melodic-caramel-c6e7e5.netlify.app/?replay)** · **[📐 Architecture doc](https://wise-sandal-b34.notion.site/Slipstream-Architecture-Document-a6e52d96a8d648a08ea2a1576a8f316f)**
+`mainnet-beta` · agent `Claude Haiku 4.5` · built for the Superteam Nigeria Advanced Infrastructure Challenge
 
 ---
 
+## Contents
+
+1. [What it is](#what-it-is)
+2. [See it live](#see-it-live-60-second-tour)
+3. [How it works](#how-it-works)
+4. [The three required questions](#the-three-required-questions)
+5. [Failure handling](#failure-handling-not-happy-path)
+6. [Operational lessons](#operational-lessons-learned-the-hard-way)
+7. [Run it yourself](#run-it-yourself)
+8. [Verifying the lifecycle log](#verifying-the-lifecycle-log)
+
+---
+
+## What it is
+
 Anyone can *send* a Solana transaction. **Landing** one — reliably, under congestion, on a public
-endpoint — is a different problem entirely. Slipstream is a smart transaction stack built around
-the exact part most stacks hard-code: **the retry**.
+endpoint — is a different problem entirely. Slipstream is built around the exact part most stacks
+hard-code: **the retry**.
 
 A dynamic **tip engine** prices a sane opening bid from live Jito tip-floor data. Then an
 autonomous **Claude agent — not a formula —** decides how far above that bid to climb when a bundle
